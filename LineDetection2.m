@@ -22,7 +22,7 @@ function varargout = LineDetection2(varargin)
 
 % Edit the above text to modify the response to help LineDetection2
 
-% Last Modified by GUIDE v2.5 29-Jul-2016 16:03:08
+% Last Modified by GUIDE v2.5 03-Aug-2016 08:42:20
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -58,6 +58,7 @@ handles.output = hObject;
 
 set(gcf, 'WindowButtonDownFcn', @getLocation);
 
+
 cfig_file = strcat(pwd,'/SavedConfigurations2.txt');
 cid = fopen(cfig_file,'wt');
 fprintf(cid,'%20s    %10s    %5s    %11s    %9s    %13s    %50s\n','Image Name','Image Type','Sigma','P','Q','Profile Width','Notes');
@@ -70,6 +71,7 @@ handles.oldp = [0; 0];
 handles.oldq = [0; 0];
 
 handles.i = 0;
+set(handles.pushbutton9,'Enable','off')
 handles.endofline = false;
 handles.I = [];
 handles.r1 = [];
@@ -111,14 +113,30 @@ function pushbutton1_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbutton1 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-handles.image_name = uigetfile({'*.*'});
+[FileName,PathName,FilterIndex] = uigetfile({'*.*'});
+handles.image_name = strcat(PathName,FileName);
 handles.current_image = imread(handles.image_name);
+if ndims(handles.current_image)>2
+    handles.image_type = 'RGB';
+    guidata(hObject,handles);
+    set(handles.radiobutton1,'Value',1);
+    set(handles.radiobutton2,'Value',0);
+else
+    handles.image_type = 'Grayscale';
+    
+    guidata(hObject,handles);
+    disp('done')
+    set(handles.radiobutton2,'Value',1);
+    set(handles.radiobutton1,'Value',0);
+end
+guidata(hObject,handles);
+set(handles.pushbutton9,'Enable','off');
 I = imresize(handles.current_image, [256 256]);
 cla(handles.axes1,'reset');
 axes(handles.axes1);
 imshow(I);
 
-guidata(hObject,handles);
+
 
 
 % --- Executes on button press in pushbutton2.
@@ -380,6 +398,7 @@ while true
         u = u + 1; 
     end
 
+    m = smoothts(m, 'g', 5, 0.65);
     mConv = conv(m,fspecial('log',[1 4],handles.sigma),'same');
     smConv = sign(mConv);
     %disp(i)
@@ -400,21 +419,41 @@ while true
 %             break;
 %         end
 %     end
-    for q=2:size(mConv,2)-1
-        if mConv(q-1)~=0 && round(mConv(q-1),3)==-round(mConv(q+1),3) && mConv(q)==0
-            count = count + 1;
-            if i==0
-                r1 = S{q};
-            elseif i==2
-                r2 = S{q};
-            else
-                r1 = r2;
-                r2 = S{q};
-            end
+%     for q=2:size(mConv,2)-1
+%         if mConv(q-1)~=0 && round(mConv(q-1),3)==-round(mConv(q+1),3) && mConv(q)==0
+%             count = count + 1;
+%             if i==0
+%                 r1 = S{q};
+%             elseif i==2
+%                 r2 = S{q};
+%             else
+%                 r1 = r2;
+%                 r2 = S{q};
+%             end
+%         end
+%     end
+
+    [mx ix] = max(mConv(4:end-3));
+    [mn in] = min(mConv(4:end-3));
+    if size(ix,2)>1 || size(in,2)>1
+        disp('end1')
+        break;
+    end
+    
+    if mx~=0 && sign(mx)==-sign(mn) && (in(1)<=ix(1)+2 && in(1)>=ix(1)-2)
+        count = 1;
+        q = round(((ix(1)+in(1))/2)+3);
+        if i==0
+            r1 = S{q};
+        elseif i==2
+            r2 = S{q};
+        else
+            r1 = r2;
+           r2 = S{q};
         end
     end
+
     if count~=1
-        disp(count)
         disp('end')
         guidata(hObject,handles);
         break;
@@ -439,13 +478,17 @@ function pushbutton4_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 if handles.endofline==true
     handles.i = 0;
+    set(handles.pushbutton9,'Enable','off')
     handles.I = [];
     handles.r1 = [];
     handles.r2 = [];
     handles.endofline = false;
     guidata(hObject,handles);
 end
-
+if handles.i==2
+    set(handles.pushbutton9,'Enable','on')
+end
+set(handles.text13,'String',num2str(handles.i));
 switch handles.image_type
     case 'RGB'
         I0 = double(handles.current_image)/255;
@@ -468,6 +511,7 @@ end
 handles.imagewidth = 256;
 handles.imageheight = 256;
 %%while true
+disp(handles.i)
 if handles.i<4
     d = norm(handles.q-handles.p);
     uv = (handles.q-handles.p)/d;
@@ -511,7 +555,7 @@ for j = start:finish
     s0 = r0+j*[-uv(2); uv(1)];
     s = round(s0);
     if s(1)>handles.imagewidth
-            s(1) = handles.imagewidth;
+        s(1) = handles.imagewidth;
     end
     if s(2)>handles.imageheight
         s(2) = handles.imageheight;
@@ -529,32 +573,28 @@ for j = start:finish
     u = u + 1; 
 end
 axes(handles.axes2);
+m = smoothts(m, 'g', 5, 0.65);
 plot(m);
+%plot(smoothts(m, 'g', 5, 0.65));
 title('Base Profile')
 mConv = conv(m,fspecial('log',[1 4],handles.sigma),'same');
 axes(handles.axes3);
-plot(mConv);
+%plot(smoothts(mConv, 'g', 5, 0.65));
+plot(mConv)
+hold on
+line([4 4],[min(mConv) max(mConv)],'Color','r');
+hold on
+line([size(mConv,2)-3 size(mConv,2)-3], [min(mConv) max(mConv)],'Color','r');
+hold off
 title('Laplacian of Gaussian')
 smConv = sign(mConv);
 %disp(handles.i)
 %disp(mConv)
 %disp('%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%')
 count = 0;
-for q=2:size(mConv,2)-1
-    if mConv(q-1)~=0 && round(mConv(q-1),3)==-round(mConv(q+1),3) && mConv(q)==0
-        count = count + 1;
-        if handles.i==0
-            handles.r1 = S{q};
-        elseif handles.i==2
-            handles.r2 = S{q};
-        else
-            handles.r1 = handles.r2;
-            handles.r2 = S{q};
-        end
-    end
-end
-% for q=2:size(mConv,2)-1
-%     if smConv(q-1)~=0 && smConv(q-1)==-smConv(q+1) && smConv(q)==0
+%for q=4:size(mConv,2)-3
+%     if mConv(q-1)~=0 && round(mConv(q-1),3)==-round(mConv(q+1),3) && mConv(q)==0
+%         count = count + 1;
 %         if handles.i==0
 %             handles.r1 = S{q};
 %         elseif handles.i==2
@@ -563,19 +603,37 @@ end
 %             handles.r1 = handles.r2;
 %             handles.r2 = S{q};
 %         end
-%         break;
 %     end
-% end
-% [pks,lcs] = findpeaks(mConv);
-% if length(pks)~=2
-%     handles.endofline = true;
-%     disp('end')
-%     guidata(hObject,handles);
-%     return
-% end 
+%end
+%smoothts(mConv(4:end-3), 'g', 5, 0.65)
+%[mx ix] = max(smoothts(mConv(4:end-3), 'g', 5, 0.65));
+%[mn in] = min(smoothts(mConv(4:end-3), 'g', 5, 0.65));
+
+[mx ix] = max(mConv(4:end-3));
+[mn in] = min(mConv(4:end-3));
+if size(ix,2)>1 || size(in,2)>1
+    handles.endofline = true;
+    disp('end1')
+    guidata(hObject,handles);
+    return
+end
+if mx~=0 && sign(mx)==-sign(mn) && (in(1)<=ix(1)+2 && in(1)>=ix(1)-2)
+    count = 1;
+    q = round(((ix(1)+in(1))/2)+3);
+    if handles.i==0
+        handles.r1 = S{q};
+    elseif handles.i==2
+        handles.r2 = S{q};
+    else
+        handles.r1 = handles.r2;
+        handles.r2 = S{q};
+    end
+end
+
+
 if count~=1
     handles.endofline = true;
-    disp('end')
+    disp('end2')
     guidata(hObject,handles);
     return
 end
@@ -673,3 +731,145 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 handles.notes = get(hObject,'String');
 guidata(hObject,handles);
+
+
+% --- Executes on button press in pushbutton9.
+function pushbutton9_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbutton9 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+stop = handles.i - 4;
+r1 = [];
+r2 = [];
+if stop==0
+    set(handles.pushbutton9,'Enable','off');
+end
+switch handles.image_type
+    case 'RGB'
+        I0 = double(handles.current_image)/255;
+        I0 = rgb2gray(I0);.../255
+        I0 = imresize(I0, [256 256]);
+        %I0 = imgaussfilt(I0,5.0);
+    case 'Grayscale'
+        %I0 = double(handles.current_image)/255;
+        %I0 = imgaussfilt(imresize(I0, [256 256]),2);
+        I0 = handles.current_image/255;
+        I0 = double(imgaussfilt(imresize(I0, [256 256]),2));
+end
+
+d = norm(handles.q-handles.p);
+v = (handles.q-handles.p)/d;
+
+I = repmat(I0,[1 1 3]);
+handles.imagewidth = 256;
+handles.imageheight = 256;
+start = -fix((handles.profilewidth)/2);
+finish = fix((handles.profilewidth - 1)/2);
+i = 0;
+while i<=stop
+    if i<4
+        d = norm(handles.q-handles.p);
+        uv = (handles.q-handles.p)/d;
+        r0 = handles.p+i*uv;
+        r = round(r0);
+        I(r(1),r(2),1) = 1;
+        I(r(1),r(2),2:3) = 0;
+        if i==0
+            r1 = r;
+        end
+    else
+        direction = r2 - r1;
+        distance = norm(direction);
+        if distance==0
+            break;
+        end
+        uv = direction/distance;
+        r0 = r2 + 2*uv;
+        r = round(r0);
+        if r(1)>handles.imagewidth
+            r(1) = handles.imagewidth;
+        end
+        if r(2)>handles.imageheight
+            r(2) = handles.imageheight;
+        end
+        if r(1)<1
+            r(1) = 1;
+        end
+        %disp(r)
+        I(r(1),r(2),1) = 1;
+        I(r(1),r(2),2:3) = 0;
+    end
+    m = [];
+    S = {};
+    u = 1;
+    for j = start:finish
+        s0 = r0+j*[-uv(2); uv(1)];
+        s = round(s0);
+        if s(1)>handles.imagewidth
+                s(1) = handles.imagewidth;
+        end
+        if s(2)>handles.imageheight
+            s(2) = handles.imageheight;
+        end
+        if s(1)<1
+            s(1) = 1;
+        end
+        if s(2)<1
+            s(2) = 1;
+        end
+        S{u} = s;
+        I(s(1),s(2),1) = 1;
+        I(s(1),s(2),2:3) = 0;
+        m = [m I0(s(1),s(2))];
+        u = u + 1; 
+    end
+
+    m = smoothts(m, 'g', 5, 0.65);
+    mConv = conv(m,fspecial('log',[1 4],handles.sigma),'same');
+    smConv = sign(mConv);
+    %disp(i)
+    %disp(mConv)
+    count = 0;
+
+    [mx ix] = max(mConv(4:end-3));
+    [mn in] = min(mConv(4:end-3));
+    if size(ix,2)>1 || size(in,2)>1
+        disp('end1')
+        break;
+    end
+    
+    if mx~=0 && sign(mx)==-sign(mn) && (in(1)<=ix(1)+2 && in(1)>=ix(1)-2)
+        q = round(((ix(1)+in(1))/2)+3);
+        if i==0
+            r1 = S{q};
+        elseif i==2
+            r2 = S{q};
+        else
+            r1 = r2;
+           r2 = S{q};
+        end
+    end
+
+    i = i + 2;
+end
+handles.I = I;
+handles.r1 = r1;
+handles.r2 = r2;
+handles.i = i;
+set(handles.text13,'String',num2str(i-2));
+guidata(hObject,handles);
+
+axes(handles.axes1);
+imshow(I);
+axes(handles.axes2);
+plot(m);
+title('Base Profile')
+axes(handles.axes3);
+plot(mConv)
+hold on
+line([4 4],[min(mConv) max(mConv)],'Color','r');
+hold on
+line([size(mConv,2)-3 size(mConv,2)-3], [min(mConv) max(mConv)],'Color','r');
+hold off
+title('Laplacian of Gaussian')
+%disp('%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%')
